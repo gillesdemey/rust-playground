@@ -7,13 +7,16 @@ mod controllers;
 mod database;
 mod routes;
 
+const DEFAULT_LISTEN_ADDR: &'static str = "127.0.0.1:7878";
+const DEFAULT_DB_PATH: &'static str = "sqlite://db/playground.db";
+
 #[tokio::main]
 async fn main() {
     // start tracing subscriber
     tracing_subscriber::fmt::init();
 
     // create DB connection pool
-    let db_url = env::var("DATABASE_URL").expect("no valid DATABASE_URL set");
+    let db_url = env::var("DATABASE_URL").unwrap_or(DEFAULT_DB_PATH.to_string());
     let pool = SqlitePool::connect(&db_url)
         .await
         .expect("cannot connect to database");
@@ -34,8 +37,10 @@ fn create_server(db_pool: SqlitePool) -> Router {
 }
 
 async fn run_server(server: Router) {
-    let listen_addr = env::var("LISTEN_ADDR").unwrap_or("127.0.0.1:7878".to_string());
-    let socket_addr: SocketAddr = listen_addr.parse().expect("bad listen address");
+    let socket_addr: SocketAddr = env::var("LISTEN_ADDR")
+        .unwrap_or(DEFAULT_LISTEN_ADDR.to_string())
+        .parse()
+        .expect("bad listen address");
 
     axum::Server::bind(&socket_addr)
         .serve(server.into_make_service())
