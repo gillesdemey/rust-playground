@@ -1,14 +1,13 @@
 use axum::{routing::get, Router};
 use sqlx::SqlitePool;
 use std::{env, net::SocketAddr};
-use tracing_subscriber;
 
 mod controllers;
 mod database;
 mod routes;
 
-const DEFAULT_LISTEN_ADDR: &'static str = "127.0.0.1:7878";
-const DEFAULT_DB_PATH: &'static str = "sqlite://db/playground.db";
+const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:7878";
+const DEFAULT_DB_PATH: &str = "sqlite://db/playground.db";
 
 #[tokio::main]
 async fn main() {
