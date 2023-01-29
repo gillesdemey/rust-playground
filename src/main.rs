@@ -1,15 +1,11 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
-use serde::Serialize;
+use axum::{routing::get, Router};
 use sqlx::SqlitePool;
-use std::net::SocketAddr;
-use tracing::error;
+use std::{env, net::SocketAddr};
 use tracing_subscriber;
-
-use crate::controllers::user;
 
 mod controllers;
 mod database;
-mod models;
+mod routes;
 
 #[tokio::main]
 async fn main() {
@@ -17,50 +13,32 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // create DB connection pool
-    let pool = SqlitePool::connect("db/playground.db")
+    let db_url = env::var("DATABASE_URL").expect("no valid DATABASE_URL set");
+    let pool = SqlitePool::connect(&db_url)
         .await
-        .expect("cannot connect to DB");
+        .expect("cannot connect to database");
 
+    // migrate the database
     database::migrate(&pool).await;
 
-    let server = Router::new()
-        .route("/", get(root))
-        .route("/users", get(all_users))
-        // add pool to the app state
-        .with_state(pool);
+    // create and listen on the server
+    let server = create_server(pool);
+    run_server(server).await;
+}
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 7878));
-    axum::Server::bind(&addr)
+fn create_server(db_pool: SqlitePool) -> Router {
+    Router::new()
+        .route("/", get(routes::root::root))
+        .route("/users", get(routes::users::get_all))
+        .with_state(db_pool)
+}
+
+async fn run_server(server: Router) {
+    let listen_addr = env::var("LISTEN_ADDR").unwrap_or("127.0.0.1:7878".to_string());
+    let socket_addr: SocketAddr = listen_addr.parse().expect("bad listen address");
+
+    axum::Server::bind(&socket_addr)
         .serve(server.into_make_service())
         .await
         .unwrap();
-}
-
-#[derive(Serialize)]
-struct RootAPIResponse {
-    author: String,
-    version: String,
-}
-
-async fn root() -> impl IntoResponse {
-    let version = std::env::var("CARGO_PKG_VERSION").unwrap_or("0.0.0".to_string());
-
-    Json(RootAPIResponse {
-        author: "Gilles De Mey".to_string(),
-        version,
-    })
-}
-
-async fn all_users(State(pool): State<SqlitePool>) -> impl IntoResponse {
-    match user::get_all_users(&pool).await {
-        Ok(users) => (StatusCode::OK, Json(users)).into_response(),
-        Err(err) => {
-            error!("{}", err);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StatusCode::INTERNAL_SERVER_ERROR.to_string(),
-            )
-                .into_response()
-        }
-    }
 }
