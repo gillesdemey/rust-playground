@@ -1,5 +1,6 @@
-use axum::{http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
 use serde::Serialize;
+use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use tracing::error;
 use tracing_subscriber;
@@ -11,36 +12,47 @@ mod database;
 mod models;
 
 #[tokio::main]
-#[tracing::instrument(ret)]
 async fn main() {
+    // start tracing subscriber
     tracing_subscriber::fmt::init();
 
-    database::migrate().await;
+    // create DB connection pool
+    let pool = SqlitePool::connect("db/playground.db")
+        .await
+        .expect("cannot connect to DB");
 
-    let router = Router::new()
+    database::migrate(&pool).await;
+
+    let server = Router::new()
         .route("/", get(root))
-        .route("/users", get(all_users));
+        .route("/users", get(all_users))
+        // add pool to the app state
+        .with_state(pool);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 7878));
     axum::Server::bind(&addr)
-        .serve(router.into_make_service())
+        .serve(server.into_make_service())
         .await
         .unwrap();
 }
 
 #[derive(Serialize)]
-struct ApiRoot {
+struct RootAPIResponse {
+    author: String,
     version: String,
 }
 
 async fn root() -> impl IntoResponse {
-    Json(ApiRoot {
-        version: String::from("0.1.0"),
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap_or("0.0.0".to_string());
+
+    Json(RootAPIResponse {
+        author: "Gilles De Mey".to_string(),
+        version,
     })
 }
 
-async fn all_users() -> impl IntoResponse {
-    match user::get_all_users().await {
+async fn all_users(State(pool): State<SqlitePool>) -> impl IntoResponse {
+    match user::get_all_users(&pool).await {
         Ok(users) => (StatusCode::OK, Json(users)).into_response(),
         Err(err) => {
             error!("{}", err);

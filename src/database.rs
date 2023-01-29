@@ -1,9 +1,5 @@
-use sqlx::{Connection, SqliteConnection};
+use sqlx::SqlitePool;
 
-pub async fn migrate() {
-    let mut conn = SqliteConnection::connect("db/playground.db").await.unwrap();
-    return sqlx::migrate!("db/migrations")
-        .run(&mut conn)
-        .await
-        .unwrap();
+pub async fn migrate(pool: &SqlitePool) {
+    return sqlx::migrate!("db/migrations").run(pool).await.unwrap();
 }
